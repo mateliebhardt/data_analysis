@@ -3,6 +3,7 @@ Data Quality Report: Column Missingness Comparison
 ---------------------------------------------------
 Horizontal grouped bar chart showing % missing values
 per column for two DataFrames with identical column names.
+Only overlapping rows (matched on KEY_COLS) are compared.
 """
 
 import pandas as pd
@@ -12,6 +13,7 @@ import plotly.graph_objects as go
 # ─────────────────────────────────────────────
 # CONFIGURE HERE
 # ─────────────────────────────────────────────
+KEY_COLS  = ["customer_id", "signup_date"]   # columns to match rows on
 DF1_LABEL = "Source A"
 DF2_LABEL = "Source B"
 
@@ -50,12 +52,28 @@ df2 = pd.DataFrame({
 
 
 # ─────────────────────────────────────────────
+# FILTER TO OVERLAPPING ROWS
+# ─────────────────────────────────────────────
+keys1 = df1.set_index(KEY_COLS).index
+keys2 = df2.set_index(KEY_COLS).index
+shared_keys = keys1.intersection(keys2)
+
+df1_matched = df1.set_index(KEY_COLS).loc[shared_keys].reset_index()
+df2_matched = df2.set_index(KEY_COLS).loc[shared_keys].reset_index()
+
+n_total1, n_total2 = len(df1), len(df2)
+n_matched = len(shared_keys)
+
+print(f"Overlap: {n_matched} shared rows "
+      f"(df1: {n_total1} total, df2: {n_total2} total)")
+
+# ─────────────────────────────────────────────
 # LOGIC
 # ─────────────────────────────────────────────
-columns = df1.columns.tolist()
+columns = df1_matched.columns.tolist()
 
-miss1 = (df1.isnull().mean() * 100).round(1)
-miss2 = (df2.isnull().mean() * 100).round(1)
+miss1 = (df1_matched.isnull().mean() * 100).round(1)
+miss2 = (df2_matched.isnull().mean() * 100).round(1)
 
 # Sort by average missingness descending
 avg_miss = ((miss1 + miss2) / 2).sort_values(ascending=True)
@@ -116,7 +134,7 @@ fig.update_layout(
     barmode="group",
     title=dict(
         text="<b>Column Missingness Comparison</b><br>"
-             "<sup>% of null values per column · sorted by average missingness</sup>",
+             f"<sup>% of null values per column · {n_matched} matched rows · sorted by average missingness</sup>",
         font=dict(size=20, color="white"),
         x=0.5,
         xanchor="center",
