@@ -72,16 +72,16 @@ print(f"Overlap: {n_matched} shared rows "
 # ─────────────────────────────────────────────
 columns = df1_matched.columns.tolist()
 
-miss1 = (df1_matched.isnull().mean() * 100).round(1)
-miss2 = (df2_matched.isnull().mean() * 100).round(1)
+avail1 = (df1_matched.notnull().mean() * 100).round(1)
+avail2 = (df2_matched.notnull().mean() * 100).round(1)
 
-# Sort by average missingness descending
-avg_miss = ((miss1 + miss2) / 2).sort_values(ascending=True)
-columns_sorted = avg_miss.index.tolist()
+# Sort by average availability ascending so worst columns are at the top
+avg_avail = ((avail1 + avail2) / 2).sort_values(ascending=True)
+columns_sorted = avg_avail.index.tolist()
 
 y      = columns_sorted
-x1     = [miss1[c] for c in columns_sorted]
-x2     = [miss2[c] for c in columns_sorted]
+x1     = [avail1[c] for c in columns_sorted]
+x2     = [avail2[c] for c in columns_sorted]
 
 # ─────────────────────────────────────────────
 # CHART
@@ -100,8 +100,8 @@ fig.add_trace(go.Bar(
         color="#4F8EF7",
         line=dict(color="#1a1a2e", width=1),
     ),
-    hovertemplate="<b>%{y}</b><br>" + DF1_LABEL + ": %{x:.1f}%<extra></extra>",
-    text=[f"{v:.1f}%" if v > 0 else "" for v in x1],
+    hovertemplate="<b>%{y}</b><br>" + DF1_LABEL + ": %{x:.1f}% available<extra></extra>",
+    text=[f"{v:.1f}%" for v in x1],
     textposition="outside",
     textfont=dict(size=11, color="#4F8EF7"),
 ))
@@ -115,17 +115,17 @@ fig.add_trace(go.Bar(
         color="#F76B6B",
         line=dict(color="#1a1a2e", width=1),
     ),
-    hovertemplate="<b>%{y}</b><br>" + DF2_LABEL + ": %{x:.1f}%<extra></extra>",
-    text=[f"{v:.1f}%" if v > 0 else "" for v in x2],
+    hovertemplate="<b>%{y}</b><br>" + DF2_LABEL + ": %{x:.1f}% available<extra></extra>",
+    text=[f"{v:.1f}%" for v in x2],
     textposition="outside",
     textfont=dict(size=11, color="#F76B6B"),
 ))
 
-# Threshold line at 20%
+# Threshold line at 80% availability
 fig.add_vline(
-    x=20,
+    x=80,
     line=dict(color="rgba(255,200,80,0.5)", width=1.5, dash="dot"),
-    annotation_text="20% threshold",
+    annotation_text="80% threshold",
     annotation_position="top",
     annotation_font=dict(color="rgba(255,200,80,0.8)", size=11),
 )
@@ -133,15 +133,15 @@ fig.add_vline(
 fig.update_layout(
     barmode="group",
     title=dict(
-        text="<b>Column Missingness Comparison</b><br>"
-             f"<sup>% of null values per column · {n_matched} matched rows · sorted by average missingness</sup>",
+        text="<b>Column Data Availability</b><br>"
+             f"<sup>% of non-null values per column · {n_matched} matched rows · sorted by average availability</sup>",
         font=dict(size=20, color="white"),
         x=0.5,
         xanchor="center",
         y=0.98,
     ),
     xaxis=dict(
-        title="Missing (%)",
+        title="Available (%)",
         range=[0, 110],
         ticksuffix="%",
         gridcolor="rgba(255,255,255,0.06)",
