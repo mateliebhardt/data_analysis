@@ -2,18 +2,20 @@
 """
 SQL SELECT Statement → Flowchart Generator (Visio-style)
 
-Parses a SQL SELECT statement and produces a clean, horizontal SVG flowchart
+Parses a SQL SELECT statement and produces a clean, horizontal JPG flowchart
 resembling Visio diagrams — white boxes, thin borders, simple connector lines.
+Output is saved to the Desktop by default.
 
 Usage:
-    python sql_to_flowchart.py                          # runs built-in demo
+    python sql_to_flowchart.py                          # runs demo → ~/Desktop/sql_flowchart.jpg
     python sql_to_flowchart.py "SELECT * FROM users"    # from CLI arg
     python sql_to_flowchart.py input.sql                # from file
-    python sql_to_flowchart.py input.sql output.svg     # custom output path
+    python sql_to_flowchart.py input.sql output.jpg     # custom output path
 
 Or import and use programmatically:
     from sql_to_flowchart import sql_to_flowchart
-    svg_string = sql_to_flowchart(sql, output_path="my_chart.svg")
+    path = sql_to_flowchart(sql)                        # → ~/Desktop/sql_flowchart.jpg
+    path = sql_to_flowchart(sql, output_path="~/Desktop/my_query.jpg")
 """
 
 import re
@@ -313,13 +315,182 @@ def render_svg(steps: List[SQLStep],
 
 # ─── Main API ─────────────────────────────────────────────────────────────────
 
-def sql_to_flowchart(sql: str, output_path: str = "sql_flowchart.svg", title: str = "") -> str:
+def _get_desktop_path() -> str:
+    """Return the user's Desktop path, cross-platform."""
+    home = os.path.expanduser("~")
+    # Windows
+    if sys.platform == "win32":
+        desktop = os.path.join(home, "Desktop")
+        if not os.path.isdir(desktop):
+            desktop = os.path.join(home, "OneDrive", "Desktop")
+        return desktop
+    # macOS
+    elif sys.platform == "darwin":
+        return os.path.join(home, "Desktop")
+    # Linux
+    else:
+        desktop = os.path.join(home, "Desktop")
+        if not os.path.isdir(desktop):
+            desktop = home  # fallback if no Desktop folder
+        return desktop
+
+
+def _render_to_image(steps: List[SQLStep], title: str = "",
+                     box_w: int = 160, box_h: int = 60,
+                     gap: int = 50, pad_x: int = 40, pad_y: int = 50,
+                     scale: int = 2) -> "Image":
+    """Render the flowchart directly to a Pillow Image (no SVG dependency)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    stroke = "#444444"
+    detail_line_h = 14
+    label_size = 14 * scale
+    detail_size = 10 * scale
+
+    # Try to load a decent font, fall back to default
+    font_label = ImageFont.load_default()
+    font_detail = ImageFont.load_default()
+    for font_path in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]:
+        if os.path.exists(font_path):
+            font_label = ImageFont.truetype(font_path, label_size)
+            break
+    for font_path in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]:
+        if os.path.exists(font_path):
+            font_detail = ImageFont.truetype(font_path, detail_size)
+            break
+
+    # Scale everything
+    bw = box_w * scale
+    bh = box_h * scale
+    g = gap * scale
+    px = pad_x * scale
+    py = pad_y * scale
+    dlh = detail_line_h * scale
+
+    # Compute per-box heights
+    box_heights = []
+    detail_lines_all = []
+    for step in steps:
+        lines = _wrap(step.detail, 22) if step.detail else []
+        detail_lines_all.append(lines)
+        text_block = 24 * scale + max(0, len(lines)) * dlh + 12 * scale
+        h = max(bh, text_block)
+        if step.shape == "diamond":
+            h = max(h + 18 * scale, 78 * scale)
+        box_heights.append(h)
+
+    row_h = max(box_heights)
+    n = len(steps)
+    title_offset = 40 * scale if title else 0
+    canvas_w = px * 2 + n * bw + (n - 1) * g
+    canvas_h = py * 2 + row_h + title_offset
+    cy = py + title_offset + row_h // 2
+
+    img = Image.new("RGB", (canvas_w, canvas_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    # Title
+    if title:
+        tw = draw.textlength(title, font=font_label)
+        draw.text(((canvas_w - tw) / 2, py // 2), title, fill="#222222", font=font_label)
+
+    for i, (step, d_lines, bht) in enumerate(zip(steps, detail_lines_all, box_heights)):
+        bx = px + i * (bw + g)
+        by = cy - bht // 2
+        bcx = bx + bw // 2
+
+        # ── Connector arrow ──
+        if i > 0:
+            prev_x = px + (i - 1) * (bw + g)
+            lx1 = prev_x + bw
+            lx2 = bx
+
+            if steps[i - 1].shape == "diamond":
+                lx1 = prev_x + bw // 2 + bw // 2 + 8 * scale
+            if step.shape == "diamond":
+                lx2 = bx + bw // 2 - bw // 2 - 8 * scale
+
+            line_y = cy
+            draw.line([(lx1, line_y), (lx2 - 4 * scale, line_y)], fill=stroke, width=scale)
+            # Arrowhead
+            ax = lx2 - 2 * scale
+            arrow_s = 5 * scale
+            draw.polygon([(ax, line_y), (ax - arrow_s, line_y - arrow_s),
+                          (ax - arrow_s, line_y + arrow_s)], fill=stroke)
+
+        # ── Shape ──
+        lw = scale
+        if step.shape == "diamond":
+            dw = bw // 2 + 8 * scale
+            dh = bht // 2 + 4 * scale
+            pts = [(bcx, cy - dh), (bcx + dw, cy),
+                   (bcx, cy + dh), (bcx - dw, cy)]
+            draw.polygon(pts, fill="white", outline=stroke, width=lw)
+
+        elif step.shape == "stadium":
+            r = bht // 2
+            draw.rounded_rectangle([bx, by, bx + bw, by + bht],
+                                    radius=r, fill="white", outline=stroke, width=lw)
+
+        elif step.shape == "rounded":
+            draw.rounded_rectangle([bx, by, bx + bw, by + bht],
+                                    radius=10 * scale, fill="white", outline=stroke, width=lw)
+
+        else:
+            draw.rectangle([bx, by, bx + bw, by + bht], fill="white", outline=stroke, width=lw)
+
+        # ── Text ──
+        if d_lines:
+            total_text_h = 18 * scale + len(d_lines) * dlh
+            text_top = cy - total_text_h // 2
+
+            tw = draw.textlength(step.label, font=font_label)
+            draw.text((bcx - tw / 2, text_top), step.label, fill="#222222", font=font_label)
+
+            for li, line in enumerate(d_lines):
+                ly = text_top + 18 * scale + li * dlh
+                tw = draw.textlength(line, font=font_detail)
+                draw.text((bcx - tw / 2, ly), line, fill="#666666", font=font_detail)
+        else:
+            tw = draw.textlength(step.label, font=font_label)
+            draw.text((bcx - tw / 2, cy - label_size // 2), step.label,
+                      fill="#222222", font=font_label)
+
+    return img
+
+
+def sql_to_flowchart(sql: str, output_path: str = "", title: str = "") -> str:
+    """
+    Parse a SQL SELECT statement and save a JPG flowchart to the Desktop.
+
+    Args:
+        sql:         The SQL SELECT statement.
+        output_path: Where to save the JPG. Defaults to ~/Desktop/sql_flowchart.jpg
+        title:       Optional title shown at the top of the chart.
+
+    Returns:
+        The path to the saved JPG file.
+    """
+    if not output_path:
+        output_path = os.path.join(_get_desktop_path(), "sql_flowchart.jpg")
+
+    # Ensure it ends with .jpg
+    base, ext = os.path.splitext(output_path)
+    if ext.lower() not in (".jpg", ".jpeg"):
+        output_path = base + ".jpg"
+
     steps = parse_sql(sql)
-    svg = render_svg(steps, title=title or "SQL Execution Flow")
-    with open(output_path, "w") as f:
-        f.write(svg)
+    img = _render_to_image(steps, title=title or "SQL Execution Flow")
+    img.save(output_path, "JPEG", quality=95)
+
     print(f"Flowchart saved to: {output_path}")
-    return svg
+    return output_path
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -356,5 +527,5 @@ if __name__ == "__main__":
         sql_input = DEMO_SQL
         print("No SQL provided — running demo query.\n")
 
-    out_path = sys.argv[2] if len(sys.argv) >= 3 else "sql_flowchart.svg"
+    out_path = sys.argv[2] if len(sys.argv) >= 3 else ""
     sql_to_flowchart(sql_input, output_path=out_path)
