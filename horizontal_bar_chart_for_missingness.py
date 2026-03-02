@@ -76,7 +76,7 @@ avail1 = (df1_matched.notnull().mean() * 100).round(1)
 avail2 = (df2_matched.notnull().mean() * 100).round(1)
 
 # Sort by average availability ascending so worst columns are at the top
-avg_avail = ((avail1 + avail2) / 2).sort_values(ascending=True)
+avg_avail = ((avail1 + avail2) / 2).sort_values(ascending=False)
 columns_sorted = avg_avail.index.tolist()
 
 y      = columns_sorted
@@ -133,12 +133,14 @@ fig.add_vline(
 fig.update_layout(
     barmode="group",
     title=dict(
-        text="<b>Column Data Availability</b><br>"
-             f"<sup>% of non-null values per column · {n_matched} matched rows · sorted by average availability</sup>",
+        text=f"<b>Column Data Availability</b><br>"
+             f"<sup>% of non-null values per column · {n_matched} matched rows · sorted low → high"
+             f"<br>&#9632; <span style='color:#4F8EF7'>{DF1_LABEL}</span>"
+             f"&nbsp;&nbsp;&#9632; <span style='color:#F76B6B'>{DF2_LABEL}</span></sup>",
         font=dict(size=20, color="white"),
         x=0.5,
         xanchor="center",
-        y=0.98,
+        y=0.99,
     ),
     xaxis=dict(
         title="Available (%)",
@@ -156,18 +158,8 @@ fig.update_layout(
     paper_bgcolor="#0f0f1a",
     plot_bgcolor="#0f0f1a",
     font=dict(color="white", family="'IBM Plex Mono', monospace"),
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=-0.12,
-        xanchor="center",
-        x=0.5,
-        font=dict(size=13),
-        bgcolor="rgba(255,255,255,0.05)",
-        bordercolor="rgba(255,255,255,0.1)",
-        borderwidth=1,
-    ),
-    margin=dict(t=100, b=80, l=20, r=80),
+    showlegend=False,
+    margin=dict(t=130, b=40, l=20, r=80),
     height=chart_height,
     width=800,
     bargap=0.25,
